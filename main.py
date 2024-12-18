@@ -3,7 +3,9 @@ import logging
 from asyncio import timeout
 
 import requests
-import sys
+import os
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.backends import default_backend
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -15,6 +17,16 @@ def main():
     student_data = processor.parse_student_data(raw_data)
     cleaned_data = processor.handle_missing_null_malformed_data(student_data)
     valid_student_data = processor.process_student_data(cleaned_data)
+    processor.save_student_data(valid_student_data)
+
+class StudentDataProcessor:
+  REQUIRED_FIELDS = ["id", "first_name", "last_name", "email"]
+
+  def __init__(self, source_url=None, encryption_key=None):
+    self.source_url = source_url
+    self.encryption_key = encryption_key.encode('utf-8') if encryption_key else os.urandom(32)
+    if not encryption_key:
+      print(f"Encryption key not provided. Using random key: {self.encryption_key.hex()}")
 
 class StudentDataProcessor:
   REQUIRED_FIELDS = ["id", "first_name", "last_name", "email"]
@@ -74,6 +86,7 @@ class StudentDataProcessor:
     valid_students = []
     for student in student_data:
       if self.validate_student_record(student):
+        student['email'] = self.encrypt_field(student['email'])
         valid_students.append(student)
       else:
         logging.warning("Student record is invalid and will be excluded: %s", student)
@@ -88,6 +101,34 @@ class StudentDataProcessor:
       logging.error("Student record is missing required fields: %s for student records: %s", missing_fields, student_record)
       return False
     return True
+
+  def encrypt_field(self, field):
+    logging.debug("encrypt_field >>")
+    try:
+      if not field:
+        return None
+
+      iv = os.urandom(16)
+      cipher = Cipher(algorithms.AES(self.encryption_key), modes.CFB(iv), backend=default_backend())
+      encryptor = cipher.encryptor()
+      encrypted_field = encryptor.update(field.encode('utf-8')) + encryptor.finalize()
+      return iv.hex() + encrypted_field.hex()
+    except Exception as e:
+      logging.error(f"Error encrypting email: {e}")
+      return None
+    finally:
+      logging.debug("encrypt_field <<")
+  def save_student_data(self, student_data, file_path="student_data.json"):
+    logging.debug("save_student_data >>")
+    try:
+      logging.info("Saving student data to %s...", file_path)
+      with open(file_path, "w") as file:
+        json.dump(student_data, file, indent=4)
+      logging.info("Student data saved successfully")
+    except Exception as e:
+      logging.error("Error saving student data: %s", str(e))
+    finally:
+      logging.debug("save_student_data <<")
 
 # This is the standard boilerplate that calls the main() function.
 if __name__ == '__main__':
