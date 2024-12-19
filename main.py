@@ -21,9 +21,24 @@ def main():
       return
 
     processor.save_student_data(valid_student_data, filename="student_data.json", file_format="json")
+    processor.save_student_data(valid_student_data, filename="student_data.csv", file_format="csv")
 
     summary_metrics = processor.calculate_summary_metrics(valid_student_data)
     processor.save_student_data(summary_metrics, filename="summary_metrics.json", file_format="json")
+
+    headers = ['Subject'] + list(next(iter(summary_metrics['subject_metrics'].values())).keys())
+    processor.save_csv(summary_metrics['subject_metrics'], headers=headers,
+                       filename="subject_metrics.csv", headerOverride="Subject")
+
+    processor.save_csv([summary_metrics['comparisons']['by_gender']],
+                       filename="gender_metrics.csv")
+
+    processor.save_csv([summary_metrics['comparisons']['by_career_aspiration']],
+                       filename="career_metrics.csv")
+
+    processor.save_csv([summary_metrics['comparisons']['by_extracurricular_activities']],
+                       filename="extracurricular_metrics.csv")
+
     logging.info(f"Summary metrics: {summary_metrics}")
 
 class StudentDataProcessor:
@@ -140,25 +155,44 @@ class StudentDataProcessor:
       return None
     finally:
       logging.debug("encrypt_field <<")
-  def save_student_data(self, student_data, file_path="student_data.json"):
+
+
+  def save_csv(self, student_data, headers=None, filename=None, headerOverride=None, delimiter='\t'):
+    with open(filename, mode='w', newline='') as file:
+      if headers is None:
+        headers = student_data[0].keys()
+
+      print(headers)
+
+      writer = csv.DictWriter(file, fieldnames=headers, delimiter=delimiter)
+
+      writer.writeheader()
+
+      if headerOverride is None:
+        writer.writerows(student_data)
+      else:
+        for override, metrics in student_data.items():
+          row = {headerOverride: override}
+          row.update(metrics)
+          writer.writerow(row)
+      logging.info(f"Student data saved to {filename} in CSV format.")
+
+  def save_json(self, student_data, filename=None):
+    with open(filename, 'w') as file:
+      json.dump(student_data, file, indent=4)
+    logging.info(f"Processed student data saved to {filename} in JSON format.")
+
   def save_student_data(self, student_data, filename="student_data.csv.json", file_format='json'):
     logging.debug("save_student_data >>")
     try:
       if file_format.lower() == 'json':
-        with open(filename, 'w') as file:
-          json.dump(student_data, file, indent=4)
-        logging.info(f"Processed student data saved to {filename} in JSON format.")
+       self.save_json(student_data, filename=filename)
       elif file_format.lower() == 'csv':
-        csv_filename = filename.replace('.json', '.csv')
-        with open(csv_filename, mode='w', newline='') as file:
-          writer = csv.DictWriter(file, fieldnames=student_data[0].keys())
-          writer.writeheader()
-          writer.writerows(student_data)
-        logging.info(f"Processed student data saved to {csv_filename} in CSV format.")
+        self.save_csv(student_data, filename=filename)
       else:
         logging.error(f"Unsupported file format: {format}")
     except Exception as e:
-      logging.error(f"Error saving processed student data to disk: {e}")
+      logging.error(f"Error saving {filename} to disk: {e}")
     finally:
       logging.debug("save_student_data <<")
 
@@ -203,17 +237,6 @@ class StudentDataProcessor:
       return {}
     finally:
       logging.debug("calculate_summary_metrics <<")
-
-    logging.debug("save_student_data >>")
-    try:
-      logging.info("Saving student data to %s...", file_path)
-      with open(file_path, "w") as file:
-        json.dump(student_data, file, indent=4)
-      logging.info("Student data saved successfully")
-    except Exception as e:
-      logging.error("Error saving student data: %s", str(e))
-    finally:
-      logging.debug("save_student_data <<")
 
 # This is the standard boilerplate that calls the main() function.
 if __name__ == '__main__':
