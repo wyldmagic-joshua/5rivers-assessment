@@ -1,8 +1,9 @@
 import csv
 import json
 import logging
-import requests
 import os
+import re
+import requests
 import statistics
 from collections import Counter
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -14,7 +15,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # Define a main() function that prints a little greeting.
 def main():
     processor = StudentDataProcessor(source_url="https://api.slingacademy.com/v1/sample-data/files/student-scores.json")
-    valid_student_data = processor.fetch_student_data(file_format="json")
+    valid_student_data = processor.fetch_and_process_student_data(file_format="json")
 
     if not valid_student_data:
       logging.error("No valid student data found.")
@@ -43,6 +44,7 @@ def main():
 
 class StudentDataProcessor:
   REQUIRED_FIELDS = ["id", "first_name", "last_name", "email"]
+  EMAIL_REGEX = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
 
   def __init__(self, source_url=None, encryption_key=None):
     self.source_url = source_url
@@ -50,7 +52,7 @@ class StudentDataProcessor:
     if not encryption_key:
       print(f"Encryption key not provided. Using random key: {self.encryption_key.hex()}")
 
-  def fetch_student_data(self, file_format='json'):
+  def fetch_and_process_student_data(self, file_format='json'):
     logging.debug("fetch_student_data >>")
     try:
       if file_format.lower() == 'json' and os.path.exists('student_data.json'):
@@ -123,7 +125,8 @@ class StudentDataProcessor:
     valid_students = []
     for student in student_data:
       if self.validate_student_record(student):
-        student['email'] = self.encrypt_field(student['email'])
+        if student['email']:
+          student['email'] = self.encrypt_field(student['email'])
         valid_students.append(student)
       else:
         logging.warning("Student record is invalid and will be excluded: %s", student)
@@ -137,6 +140,8 @@ class StudentDataProcessor:
     if missing_fields:
       logging.error("Student record is missing required fields: %s for student records: %s", missing_fields, student_record)
       return False
+    if not re.match(self.EMAIL_REGEX, student_record.get('email', '')):
+      logging.error("Invalid email format for student: %s", student_record['email'])
     return True
 
   def encrypt_field(self, field):
@@ -161,8 +166,6 @@ class StudentDataProcessor:
     with open(filename, mode='w', newline='') as file:
       if headers is None:
         headers = student_data[0].keys()
-
-      print(headers)
 
       writer = csv.DictWriter(file, fieldnames=headers, delimiter=delimiter)
 
