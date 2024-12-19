@@ -40,6 +40,8 @@ def main():
     processor.save_csv([summary_metrics['comparisons']['by_extracurricular_activities']],
                        filename="extracurricular_metrics.csv")
 
+    processor.generate_report(summary_metrics['subject_metrics'], filename="subject_metrics.png")
+
     processor.post_low_scores()
 
     logging.info(f"Summary metrics: {summary_metrics}")
@@ -302,6 +304,44 @@ class StudentDataProcessor:
       return {}
     finally:
       logging.debug("calculate_summary_metrics <<")
+
+  def generate_report(self, subject_metrics, filename="graph.png"):
+    logging.debug("generate_report >>")
+    try:
+      subjects = list(subject_metrics.keys())
+      means = [metrics['mean'] for metrics in subject_metrics.values()]
+
+      plt.figure(figsize=(10, 6))
+      plt.bar(subjects, means, color='skyblue')
+      plt.xlabel('Subjects')
+      plt.ylabel('Average Score')
+      plt.title('Average Scores by Subject')
+      plt.xticks(rotation=45, ha="right")
+      plt.tight_layout()
+      plt.savefig(filename)
+      logging.info(f"Graph saved as {filename}")
+    except Exception as e:
+      logging.error(f"Error generating graph: {e}")
+    finally:
+      plt.close()
+
+    def fetch_json_data(self):
+      logging.debug("fetch_json_data >>")
+      try:
+        logging.info("Fetching JSON data from %s...", self.source_url)
+        response = requests.get(self.source_url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        logging.info("JSON data fetched successfully.")
+        return data
+      except requests.exceptions.RequestException as e:
+        logging.error("Error fetching JSON data: %s", str(e))
+        return []
+      except json.JSONDecodeError as e:
+        logging.error("Error decoding JSON data: %s", str(e))
+        return []
+      finally:
+        logging.debug("fetch_json_data <<")
 
 # This is the standard boilerplate that calls the main() function.
 if __name__ == '__main__':
