@@ -48,6 +48,7 @@ class StudentDataProcessor:
   REQUIRED_FIELDS = ["id", "first_name", "last_name", "email"]
   EMAIL_REGEX = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
   low_score_requests = []
+  seen_students = set()
 
   def __init__(self, source_url=None, encryption_key=None):
     self.source_url = source_url
@@ -132,18 +133,29 @@ class StudentDataProcessor:
 
   def process_student_data(self, student_data):
     logging.debug("process_student_data >>")
-    valid_students = []
+    valid_students = {}
+
     for student in student_data:
       if self.validate_student_record(student):
+        # Create a unique identifier (can be customized to fit needs)
+        student_identifier = (student.get('first_name'), student.get('last_name'), student.get('email'))
+
+        if student_identifier in self.seen_students:
+          logging.warning(f"Duplicate student record found, updating: {student}")
+          valid_students[student_identifier].update(student)
+          continue  # Skip this duplicate record
+
+        self.seen_students.add(student_identifier)  # Mark this student as seen
+
         if student['email']:
           student['email'] = self.encrypt_field(student['email'])
         self.check_for_low_scores(student)
-        valid_students.append(student)
+        valid_students[student_identifier] = student
       else:
         logging.warning("Student record is invalid and will be excluded: %s", student)
     logging.info("Total valid student records: %d", len(valid_students))
     logging.debug("process_student_data <<")
-    return valid_students
+    return list(valid_students.values())
 
   def validate_student_record(self, student_record):
     missing_fields = [field for field in self.REQUIRED_FIELDS if field not in student_record or not student_record[
