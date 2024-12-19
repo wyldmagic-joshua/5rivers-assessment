@@ -40,11 +40,14 @@ def main():
     processor.save_csv([summary_metrics['comparisons']['by_extracurricular_activities']],
                        filename="extracurricular_metrics.csv")
 
+    processor.post_low_scores()
+
     logging.info(f"Summary metrics: {summary_metrics}")
 
 class StudentDataProcessor:
   REQUIRED_FIELDS = ["id", "first_name", "last_name", "email"]
   EMAIL_REGEX = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
+  low_score_requests = []
 
   def __init__(self, source_url=None, encryption_key=None):
     self.source_url = source_url
@@ -53,7 +56,7 @@ class StudentDataProcessor:
       print(f"Encryption key not provided. Using random key: {self.encryption_key.hex()}")
 
   def fetch_and_process_student_data(self, file_format='json'):
-    logging.debug("fetch_student_data >>")
+    logging.debug("fetch_and_process_student_data >>")
     try:
       if file_format.lower() == 'json' and os.path.exists('student_data.json'):
         with open('student_data.json', 'r') as file:
@@ -71,7 +74,7 @@ class StudentDataProcessor:
       logging.error(f"Error fetching student data: {e}")
       return []
     finally:
-      logging.debug("fetch_student_data <<")
+      logging.debug("fetch_and_process_student_data <<")
 
   def fetch_json_data(self):
     logging.debug("fetch_json_data >>")
@@ -127,6 +130,7 @@ class StudentDataProcessor:
       if self.validate_student_record(student):
         if student['email']:
           student['email'] = self.encrypt_field(student['email'])
+        self.check_for_low_scores(student)
         valid_students.append(student)
       else:
         logging.warning("Student record is invalid and will be excluded: %s", student)
@@ -162,7 +166,43 @@ class StudentDataProcessor:
       logging.debug("encrypt_field <<")
 
 
+  def check_for_low_scores(self, student_record):
+    logging.debug("post_low_scores >>")
+    try:
+      low_score_subjects = {
+        subject: score for subject, score in student_record.items()
+        if subject.endswith('_score') and isinstance(score, (int, float)) and score < 65
+      }
+
+      if low_score_subjects:
+        logging.info(f"Low score subjects found for student: {student_record}")
+        url = 'https://httpbin.org/post'
+        payload = {
+          'id': student_record['id'],
+          'first_name': student_record['first_name'],
+          'last_name': student_record['last_name'],
+          'email': student_record['email'],
+          'low_scores':low_score_subjects
+        }
+        self.low_score_requests.append(payload)
+    except requests.exceptions.RequestException as e:
+      logging.error(f"Error posting low score for student {student_record['id']}: {e}")
+    finally:
+      logging.debug("post_low_scores <<")
+
+  def post_low_scores(self):
+    logging.debug("post_low_scores >>")
+    try:
+      if self.low_score_requests:
+        logging.info(f"Posting low score records: {self.low_score_requests}")
+        response = requests.post('https://httpbin.org/post', json=self.low_score_requests)
+        response.raise_for_status()
+        logging.info(f"Low score records posted successfully: {response.json()}")
+    except requests.exceptions.RequestException as e:
+      logging.error(f"Error posting low score records: {e}")
+
   def save_csv(self, student_data, headers=None, filename=None, headerOverride=None, delimiter='\t'):
+    logging.debug("save_csv >>")
     with open(filename, mode='w', newline='') as file:
       if headers is None:
         headers = student_data[0].keys()
@@ -179,11 +219,14 @@ class StudentDataProcessor:
           row.update(metrics)
           writer.writerow(row)
       logging.info(f"Student data saved to {filename} in CSV format.")
+    logging.debug("save_csv <<")
 
   def save_json(self, student_data, filename=None):
+    logging.debug("save_json >>")
     with open(filename, 'w') as file:
       json.dump(student_data, file, indent=4)
     logging.info(f"Processed student data saved to {filename} in JSON format.")
+    logging.debug("save_json <<")
 
   def save_student_data(self, student_data, filename="student_data.csv.json", file_format='json'):
     logging.debug("save_student_data >>")
