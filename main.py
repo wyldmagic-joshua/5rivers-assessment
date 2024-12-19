@@ -82,9 +82,16 @@ class StudentDataProcessor:
       logging.info("Fetching JSON data from %s...", self.source_url)
       response = requests.get(self.source_url, timeout=10)
       response.raise_for_status()
-      data = response.json()
-      logging.info("JSON data fetched successfully.")
-      return data
+      logging.info("Data fetched successfully.")
+      data = response.text
+
+      try:
+        parsed_data = json.loads(data)
+        logging.info("JSON data validated successfully.")
+        return parsed_data
+      except json.JSONDecodeError as e:
+        logging.error(f"Malformed JSON data: {e}")
+        return []
     except requests.exceptions.RequestException as e:
       logging.error("Error fetching JSON data: %s", str(e))
       return []
@@ -197,7 +204,7 @@ class StudentDataProcessor:
         logging.info(f"Posting low score records: {self.low_score_requests}")
         response = requests.post('https://httpbin.org/post', json=self.low_score_requests)
         response.raise_for_status()
-        logging.info(f"Low score records posted successfully: {response.json()}")
+        logging.debug(f"Low score records posted successfully: {response.json()}")
     except requests.exceptions.RequestException as e:
       logging.error(f"Error posting low score records: {e}")
 
