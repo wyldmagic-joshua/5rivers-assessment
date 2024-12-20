@@ -1,6 +1,8 @@
 import csv
 import json
 import logging
+import sys
+
 import matplotlib.pyplot as plt
 import os
 import re
@@ -18,6 +20,17 @@ logging.basicConfig(
 
 # Define a main() function that prints a little greeting.
 def main():
+    if len(sys.argv) >= 2 and sys.argv[1] == "--decrypt":
+        email = input("Enter id to decrypt: ")
+        encryption_key = input("Enter encryption key: ")
+        processor = StudentDataProcessor(
+            encryption_key=encryption_key,
+            source_url="https://api.slingacademy.com/v1/sample-data/files/student-scores.json",
+        )
+        decrypted_email = processor.decrypt_field(id=1)
+        print(f"Decrypted email: {decrypted_email}")
+        return
+
     processor = StudentDataProcessor(
         source_url="https://api.slingacademy.com/v1/sample-data/files/student-scores.json"
     )
@@ -80,9 +93,12 @@ class StudentDataProcessor:
 
     def __init__(self, source_url=None, encryption_key=None):
         self.source_url = source_url
-        self.encryption_key = (
-            encryption_key.encode("utf-8") if encryption_key else os.urandom(32)
-        )
+
+        if not encryption_key:
+            self.encryption_key = os.urandom(32)
+        else:
+            self.encryption_key = bytes.fromhex(encryption_key)
+
         if not encryption_key:
             print(
                 f"Encryption key not provided. Using random key: {self.encryption_key.hex()}"
@@ -239,10 +255,25 @@ class StudentDataProcessor:
         finally:
             logging.debug("encrypt_field <<")
 
-    def decrypt_field(self, encrypted_field):
+    def decrypt_field(self, id=None):
         logging.debug("decrypt_field >>")
-        iv = bytes.fromhex(encrypted_field[:32])
-        encrypted_bytes = bytes.fromhex(encrypted_field[32:])
+
+        student_data = []
+        if os.path.exists("student_data.json"):
+            with open("student_data.json", "r") as file:
+                student_data = json.load(file)
+        elif os.path.exists("student_data.csv"):
+            with open("student_data.csv", "r") as file:
+                reader = csv.DictReader(file)
+                student_data = [row for row in reader]
+
+        student_record = next((x for x in student_data if x["id"] == id), None)
+        if student_record is None:
+            logging.error("Student record not found.")
+            return None
+
+        iv = bytes.fromhex(student_record["email"][:32])
+        encrypted_bytes = bytes.fromhex(student_record["email"][32:])
         cipher = Cipher(
             algorithms.AES(self.encryption_key),
             modes.CFB(iv),
@@ -265,7 +296,7 @@ class StudentDataProcessor:
             }
 
             if low_score_subjects:
-                logging.info(f"Low score subjects found for student: {student_record}")
+                logging.debug(f"Low score subjects found for student: {student_record}")
                 url = "https://httpbin.org/post"
                 payload = {
                     "id": student_record["id"],
