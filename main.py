@@ -20,6 +20,10 @@ logging.basicConfig(
 
 # Define a main() function that prints a little greeting.
 def main():
+    """
+    Main entry point of the script. Handles student data processing, encryption, decryption, and report generation.
+    If '--decrypt' argument is passed, it decrypts a student's email using the provided key.
+    """
     if len(sys.argv) >= 2 and sys.argv[1] == "--decrypt":
         email = input("Enter id to decrypt: ")
         encryption_key = input("Enter encryption key: ")
@@ -31,6 +35,7 @@ def main():
         print(f"Decrypted email: {decrypted_email}")
         return
 
+    # Initialize StudentDataProcessor to handle the processing pipeline
     processor = StudentDataProcessor(
         source_url="https://api.slingacademy.com/v1/sample-data/files/student-scores.json"
     )
@@ -40,6 +45,7 @@ def main():
         logging.error("No valid student data found.")
         return
 
+    # Save processed student data to JSON and CSV formats
     processor.save_student_data(
         valid_student_data, filename="student_data.json", file_format="json"
     )
@@ -47,11 +53,13 @@ def main():
         valid_student_data, filename="student_data.csv", file_format="csv"
     )
 
+    # Calculate and save summary metrics for student data
     summary_metrics = processor.calculate_summary_metrics(valid_student_data)
     processor.save_student_data(
         summary_metrics, filename="summary_metrics.json", file_format="json"
     )
 
+    # Save subject metrics as a CSV file
     headers = ["Subject"] + list(
         next(iter(summary_metrics["subject_metrics"].values())).keys()
     )
@@ -62,6 +70,7 @@ def main():
         headerOverride="Subject",
     )
 
+    # Save CSV files for gender, career aspiration, and extracurricular activity comparisons
     processor.save_csv(
         [summary_metrics["comparisons"]["by_gender"]], filename="gender_metrics.csv"
     )
@@ -76,22 +85,41 @@ def main():
         filename="extracurricular_metrics.csv",
     )
 
+    # Generate a PNG graph of subject metrics
     processor.generate_report(
         summary_metrics["subject_metrics"], filename="subject_metrics.png"
     )
 
+    # Post low-score records to an external API
     processor.post_low_scores()
 
     logging.info(f"Summary metrics: {summary_metrics}")
 
 
 class StudentDataProcessor:
-    REQUIRED_FIELDS = ["id", "first_name", "last_name", "email"]
-    EMAIL_REGEX = r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
-    low_score_requests = []
-    seen_students = set()
+    """
+    Processes student data from an API, performs encryption, decryption, and data transformations.
+    """
+
+    REQUIRED_FIELDS = [
+        "id",
+        "first_name",
+        "last_name",
+        "email",
+    ]  # Required fields for student records
+    EMAIL_REGEX = r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"  # Regular expression for email validation
+    low_score_requests = []  # Stores low-score requests to be posted to an external API
+    seen_students = set()  # Tracks seen students to prevent duplicates
 
     def __init__(self, source_url=None, encryption_key=None):
+        """
+        Initializes the StudentDataProcessor.
+
+        :param source_url: URL to fetch student data from.
+        :type source_url: str
+        :param encryption_key Optional encryption key for encrypting email fields.
+        :type encryption_key: Optional[str]
+        """
         self.source_url = source_url
 
         if not encryption_key:
@@ -105,6 +133,22 @@ class StudentDataProcessor:
             )
 
     def fetch_and_process_student_data(self, file_format="json"):
+        """
+        Fetches and processes student data based on the provided file format.
+
+        This function attempts to load student data from local JSON or CSV files if they
+        exist. If the specified format file is not available, it will fetch the data
+        from an external source, parse it, handle missing, null, or malformed entries,
+        and then process the cleaned data.
+
+        :param file_format: Specifies the format in which student data should be fetched.
+            Acceptable values are "json" or "csv".
+            If the format is not specified, defaults to "json".
+        :type file_format: str
+        :return: Processed student data. If an error occurs during processing,
+            an empty list is returned.
+        :rtype: list
+        """
         logging.debug("fetch_and_process_student_data >>")
         try:
             if file_format.lower() == "json" and os.path.exists("student_data.json"):
@@ -126,6 +170,21 @@ class StudentDataProcessor:
             logging.debug("fetch_and_process_student_data <<")
 
     def fetch_json_data(self):
+        """
+        Fetches JSON data from a specified source URL and returns the parsed result.
+
+        This method retrieves JSON data from the URL specified by `self.source_url`. It performs
+        a GET request, validates the response status, and attempts to decode the JSON content.
+        If the JSON content is malformed or the request fails due to network issues or any other
+        related exceptions, appropriate logging is performed, and an empty list is returned.
+
+        :raises requests.exceptions.RequestException: If any network-related error or issue occurs
+            during the HTTP request.
+        :raises json.JSONDecodeError: If the JSON response data is malformed or cannot be parsed.
+        :return: Parsed JSON data as a Python dictionary or list. If an error occurs or the JSON is
+            malformed, an empty list is returned.
+        :rtype: Union[dict, list]
+        """
         logging.debug("fetch_json_data >>")
         try:
             logging.info("Fetching JSON data from %s...", self.source_url)
@@ -151,6 +210,18 @@ class StudentDataProcessor:
             logging.debug("fetch_json_data <<")
 
     def parse_student_data(self, raw_data):
+        """
+        Parses student data from the provided raw input. The method expects a list of
+        student data in JSON format. If the input meets the expectation, it returns
+        the input data. Otherwise, it returns an empty list. The method logs detailed
+        information about the process for debugging purposes.
+
+        :param raw_data: The raw input data to be parsed. Must be of type list containing
+            JSON objects representing student data.
+        :type raw_data: list
+        :return: The parsed student data if input type is correct, otherwise an empty list.
+        :rtype: list
+        """
         logging.debug("parse_student_data >>")
         try:
             logging.info("Parsing student data...")
@@ -166,6 +237,19 @@ class StudentDataProcessor:
             logging.debug("parse_student_data <<")
 
     def handle_missing_null_malformed_data(self, student_data):
+        """
+        Processes a list of student data dictionaries to clean missing, null, or malformed
+        entries by removing entries with null values. Each student is represented as a dictionary,
+        and this function ensures a cleaned and consistent dataset for further processing.
+
+        :param student_data: List of dictionaries representing student data. Each dictionary
+            contains key-value pairs where keys are the attributes of the student, and values
+            represent the corresponding attribute values.
+        :type student_data: list[dict]
+        :return: A list of dictionaries representing the cleaned student data. Each dictionary
+            is guaranteed to contain only non-null values.
+        :rtype: list[dict]
+        """
         logging.debug("handle_missing_null_malformed_data >>")
         cleaned_students = []
         for student in student_data:
@@ -180,6 +264,22 @@ class StudentDataProcessor:
         return cleaned_students
 
     def process_student_data(self, student_data):
+        """
+        Processes a list of student data records and filters valid student entries.
+
+        The function validates each student record from the input data, ensuring it meets
+        proper validation rules. It maintains a unique set of processed student records
+        to avoid duplicates, encrypts certain sensitive fields (e.g., "email"), and performs
+        additional checks such as monitoring for low scores. Invalid records are excluded
+        from the output result.
+
+        :param student_data: A list of dictionaries, where each dictionary contains the
+            data for an individual student. Expected dictionary keys include 'first_name',
+            'last_name', 'email', and other fields required for processing.
+        :return: A list of dictionaries corresponding to valid student entries
+            after processing, de-duplication, and field modifications.
+        :rtype: list[dict]
+        """
         logging.debug("process_student_data >>")
         valid_students = {}
 
@@ -214,6 +314,18 @@ class StudentDataProcessor:
         return list(valid_students.values())
 
     def validate_student_record(self, student_record):
+        """
+        Validates a student record to ensure all required fields are present and valid.
+
+        A student record must contain all fields specified in REQUIRED_FIELDS and adhere to
+        the defined formats, such as email matching EMAIL_REGEX. Missing or improperly formatted
+        fields are logged as errors.
+
+        :param student_record: The dictionary containing student information to be validated.
+        :type student_record: dict
+        :return: Returns True if the student record is valid; otherwise, False.
+        :rtype: bool
+        """
         missing_fields = [
             field
             for field in self.REQUIRED_FIELDS
@@ -233,6 +345,21 @@ class StudentDataProcessor:
         return True
 
     def encrypt_field(self, field):
+        """
+        Encrypt a provided field using AES encryption in CFB mode.
+
+        This method takes a string input, encrypts it using a randomly generated
+        initialization vector (IV) and a pre-configured encryption key, and
+        returns the combined result as a hexadecimal string. The encryption
+        process incorporates the provided field encoded in UTF-8 and ensures
+        the final output is securely formatted.
+
+        :param field: The plaintext string to be encrypted.
+        :type field: str
+        :return: Returns the IV concatenated with the encrypted field as a hex string.
+                 If the input is invalid or an error occurs, returns None.
+        :rtype: str or None
+        """
         logging.debug("encrypt_field >>")
         try:
             if not field:
@@ -256,6 +383,17 @@ class StudentDataProcessor:
             logging.debug("encrypt_field <<")
 
     def decrypt_field(self, id=None):
+        """
+        Decrypts the email field for a specific student record based on the provided ID. This
+        function fetches student data from either a JSON or CSV file, locates the record with
+        the given ID, and decrypts the email field using the AES encryption algorithm.
+
+        :param id: The unique identifier of the student record to be decrypted.
+        :type id: Optional[str]
+        :return: The decrypted email address of the student, or None if the record is not
+            found or decryption fails.
+        :rtype: Optional[str]
+        """
         logging.debug("decrypt_field >>")
 
         student_data = []
@@ -285,6 +423,28 @@ class StudentDataProcessor:
         return decrypted_email.decode("utf-8")
 
     def check_for_low_scores(self, student_record):
+        """
+        Checks for any low scores in the student's record and, if found, prepares a payload
+        with the student's information and low scores for a POST request.
+
+        A score is considered "low" if:
+        - The key for the score ends with "_score".
+        - The score is an integer or float type.
+        - The score is less than 65.
+
+        If there are low scores, the function logs the findings and appends a payload
+        containing the student's information and low scores to the `low_score_requests` list.
+
+        :param student_record: A dictionary containing details about a student, including their
+            scores across subjects. Must include a valid "id", "first_name", "last_name", and
+            "email" as keys, along with keys for subjects ending in "_score".
+        :type student_record: dict
+
+        :raises requests.exceptions.RequestException: If an error occurs when attempting to post
+            the low-score information using an HTTP request.
+
+        :return: None
+        """
         logging.debug("post_low_scores >>")
         try:
             low_score_subjects = {
@@ -314,6 +474,19 @@ class StudentDataProcessor:
             logging.debug("post_low_scores <<")
 
     def post_low_scores(self):
+        """
+        Post low score records to an external API.
+
+        This method attempts to send the accumulated low score records to an external
+        API endpoint using a POST request. If successful, the records are transmitted
+        and a successful response is logged. In the event of a failure during the HTTP
+        request, an error message is logged.
+
+        :raises requests.exceptions.RequestException: Raised if there is an
+            issue with the HTTP request during posting (e.g., connection issues,
+            timeouts, or HTTP errors).
+        :return: None
+        """
         logging.debug("post_low_scores >>")
         try:
             if self.low_score_requests:
@@ -336,6 +509,28 @@ class StudentDataProcessor:
         headerOverride=None,
         delimiter="\t",
     ):
+        """
+        This method saves the provided student data into a CSV file. The data can be written
+        using either default or custom headers, and offers an option to override the headers
+        with a specified key. The delimiter for the CSV file can also be configured. The method
+        logs activities during its execution.
+
+        :param student_data: A list of dictionaries containing student data to be written into
+            the CSV file. Each dictionary represents a row in the file.
+        :type student_data: list of dict
+        :param headers: Optional parameter that specifies the headers to be used in the CSV
+            file. If not provided, the keys of the first dictionary in student_data will be used.
+            Defaults to None.
+        :type headers: list, optional
+        :param filename: The name of the output CSV file where the student data will be saved.
+        :type filename: str
+        :param headerOverride: Optional parameter that can be used to override the header with
+            a specific key for writing row-specific data. Defaults to None.
+        :type headerOverride: str, optional
+        :param delimiter: The delimiter to be used in the CSV file. Defaults to tab ("\t").
+        :type delimiter: str
+        :return: None
+        """
         logging.debug("save_csv >>")
         with open(filename, mode="w", newline="") as file:
             if headers is None:
@@ -356,6 +551,20 @@ class StudentDataProcessor:
         logging.debug("save_csv <<")
 
     def save_json(self, student_data, filename=None):
+        """
+        Save student data to a JSON file.
+
+        This method takes in student data in a dictionary format and saves it to a specified
+        file in JSON format. If the filename is not provided, it uses a default value. Logging
+        is used to record the progress of this operation.
+
+        :param student_data: The data structure containing student details to be saved.
+        :type student_data: dict
+        :param filename: The name of the file where the student data should be saved.
+                         Defaults to None.
+        :type filename: str, optional
+        :return: None
+        """
         logging.debug("save_json >>")
         with open(filename, "w") as file:
             json.dump(student_data, file, indent=4)
@@ -365,6 +574,23 @@ class StudentDataProcessor:
     def save_student_data(
         self, student_data, filename="student_data.csv.json", file_format="json"
     ):
+        """
+        Saves the given student data to a file in the specified format. Supported formats
+        include 'json' and 'csv'. If the format is not supported, an error message will
+        be logged. In case of an exception during the saving process, the exception will
+        also be logged.
+
+        :param student_data: The data that represents students, which will be saved to a
+                             file in the specified format.
+        :type student_data: Any
+        :param filename: The name of the file where the student data should be saved. The
+                         default value is 'student_data.csv.json'.
+        :type filename: str, optional
+        :param file_format: The format in which the student data should be saved. Supported
+                            formats are 'json' and 'csv'. The default value is 'json'.
+        :type file_format: str, optional
+        :return: None
+        """
         logging.debug("save_student_data >>")
         try:
             if file_format.lower() == "json":
@@ -379,6 +605,29 @@ class StudentDataProcessor:
             logging.debug("save_student_data <<")
 
     def calculate_summary_metrics(self, student_data, file_format="json"):
+        """
+        Calculate summary statistics and comparison metrics for a list of student data.
+
+        This method processes student information to compute summary metrics for
+        various subjects, including their mean, median, standard deviation, maximum,
+        and minimum scores. Additionally, it performs categorical comparisons of
+        students by gender, career aspirations, and extracurricular activities.
+
+        :param student_data: A list of dictionaries, where each dictionary contains
+            individual student details such as subject scores, gender, career aspiration,
+            and extracurricular activities.
+        :type student_data: list[dict]
+
+        :param file_format: The format in which results should be returned. Defaults
+            to 'json'.
+        :type file_format: str
+
+        :return: A dictionary with two main keys: 'subject_metrics', which contains
+            detailed statistics for each subject, and 'comparisons', which holds
+            comparisons grouped by gender, career aspirations, and extracurricular
+            activities.
+        :rtype: dict
+        """
         logging.debug("calculate_summary_metrics >>")
         try:
             subject_scores = {
@@ -438,6 +687,21 @@ class StudentDataProcessor:
             logging.debug("calculate_summary_metrics <<")
 
     def generate_report(self, subject_metrics, filename="graph.png"):
+        """
+        Generates a bar graph representation of average scores by subject
+        and saves it as an image file. The graph is created using the
+        data provided in `subject_metrics`, with each subject on the x-axis
+        and their corresponding mean score as bars.
+
+        :param subject_metrics: A dictionary containing the subject names
+            as keys and a dictionary of their metrics as values. The metric
+            dictionary should have a key "mean" for the mean score.
+        :type subject_metrics: dict[str, dict[str, float]]
+        :param filename: Optional. The filename where the graph image will
+            be saved. Defaults to "graph.png".
+        :type filename: str
+        :return: None
+        """
         logging.debug("generate_report >>")
         try:
             subjects = list(subject_metrics.keys())
