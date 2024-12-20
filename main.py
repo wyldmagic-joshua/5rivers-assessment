@@ -1,6 +1,7 @@
 import csv
 import json
 import logging
+import matplotlib.pyplot as plt
 import os
 import re
 import requests
