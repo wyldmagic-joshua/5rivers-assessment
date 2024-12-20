@@ -109,7 +109,6 @@ class StudentDataProcessor:
     ]  # Required fields for student records
     EMAIL_REGEX = r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"  # Regular expression for email validation
     low_score_requests = []  # Stores low-score requests to be posted to an external API
-    seen_students = set()  # Tracks seen students to prevent duplicates
 
     def __init__(self, source_url=None, encryption_key=None):
         """
@@ -282,6 +281,7 @@ class StudentDataProcessor:
         """
         logging.debug("process_student_data >>")
         valid_students = {}
+        seen_students = set()  # Tracks seen students to prevent duplicates
 
         for student in student_data:
             if self.validate_student_record(student):
@@ -292,14 +292,14 @@ class StudentDataProcessor:
                     student.get("email"),
                 )
 
-                if student_identifier in self.seen_students:
+                if student_identifier in seen_students:
                     logging.warning(
                         f"Duplicate student record found, updating: {student}"
                     )
                     valid_students[student_identifier].update(student)
                     continue  # Skip this duplicate record
 
-                self.seen_students.add(student_identifier)  # Mark this student as seen
+                seen_students.add(student_identifier)  # Mark this student as seen
 
                 if student["email"]:
                     student["email"] = self.encrypt_field(student["email"])
@@ -396,31 +396,35 @@ class StudentDataProcessor:
         """
         logging.debug("decrypt_field >>")
 
-        student_data = []
-        if os.path.exists("student_data.json"):
-            with open("student_data.json", "r") as file:
-                student_data = json.load(file)
-        elif os.path.exists("student_data.csv"):
-            with open("student_data.csv", "r") as file:
-                reader = csv.DictReader(file)
-                student_data = [row for row in reader]
+        try:
+            student_data = []
+            if os.path.exists("student_data.json"):
+                with open("student_data.json", "r") as file:
+                    student_data = json.load(file)
+            elif os.path.exists("student_data.csv"):
+                with open("student_data.csv", "r") as file:
+                    reader = csv.DictReader(file)
+                    student_data = [row for row in reader]
 
-        student_record = next((x for x in student_data if x["id"] == id), None)
-        if student_record is None:
-            logging.error("Student record not found.")
+            student_record = next((x for x in student_data if x["id"] == id), None)
+            if student_record is None:
+                logging.error("Student record not found.")
+                return None
+
+            iv = bytes.fromhex(student_record["email"][:32])
+            encrypted_bytes = bytes.fromhex(student_record["email"][32:])
+            cipher = Cipher(
+                algorithms.AES(self.encryption_key),
+                modes.CFB(iv),
+                backend=default_backend(),
+            )
+            decryptor = cipher.decryptor()
+            decrypted_email = decryptor.update(encrypted_bytes) + decryptor.finalize()
+            logging.debug("decrypt_field <<")
+            return decrypted_email.decode("utf-8")
+        except Exception as e:
+            logging.error(f"Error decrypting email: {e}")
             return None
-
-        iv = bytes.fromhex(student_record["email"][:32])
-        encrypted_bytes = bytes.fromhex(student_record["email"][32:])
-        cipher = Cipher(
-            algorithms.AES(self.encryption_key),
-            modes.CFB(iv),
-            backend=default_backend(),
-        )
-        decryptor = cipher.decryptor()
-        decrypted_email = decryptor.update(encrypted_bytes) + decryptor.finalize()
-        logging.debug("decrypt_field <<")
-        return decrypted_email.decode("utf-8")
 
     def check_for_low_scores(self, student_record):
         """
