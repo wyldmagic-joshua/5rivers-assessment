@@ -239,6 +239,19 @@ class StudentDataProcessor:
         finally:
             logging.debug("encrypt_field <<")
 
+    def decrypt_field(self, encrypted_field):
+        logging.debug("decrypt_field >>")
+        iv = bytes.fromhex(encrypted_field[:32])
+        encrypted_bytes = bytes.fromhex(encrypted_field[32:])
+        cipher = Cipher(
+            algorithms.AES(self.encryption_key),
+            modes.CFB(iv),
+            backend=default_backend(),
+        )
+        decryptor = cipher.decryptor()
+        decrypted_email = decryptor.update(encrypted_bytes) + decryptor.finalize()
+        logging.debug("decrypt_field <<")
+        return decrypted_email.decode("utf-8")
 
     def check_for_low_scores(self, student_record):
         logging.debug("post_low_scores >>")
