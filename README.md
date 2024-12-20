@@ -44,7 +44,7 @@ This Python script processes student data, performs encryption/decryption on ema
 
 3. Run the script:
    ```bash
-   python student_data_processor.py
+   python main.py
    ```
 
 ---
@@ -53,12 +53,12 @@ This Python script processes student data, performs encryption/decryption on ema
 
 Run the script to process student data, save reports, and generate graphs:
 ```bash
-python student_data_processor.py
+python main.py
 ```
 
 To decrypt an email address for a student with a specific ID, use the `--decrypt` argument:
 ```bash
-python student_data_processor.py --decrypt
+python main.py --decrypt
 ```
 
 You will be prompted to enter the **student ID** and the **encryption key**.
@@ -69,7 +69,7 @@ You will be prompted to enter the **student ID** and the **encryption key**.
 
 | Argument    | Description                             | Example Usage              |
 |-------------|-----------------------------------------|----------------------------|
-| `--decrypt` | Decrypts the email for a student record | `python student_data_processor.py --decrypt` |
+| `--decrypt` | Decrypts the email for a student record | `python main.py --decrypt` |
 
 ---
 
@@ -77,7 +77,7 @@ You will be prompted to enter the **student ID** and the **encryption key**.
 
 ```
 student-data-processor/
-├── student_data_processor.py    # Main script file
+├── main.py                       # Main script file
 ├── student_data.json             # Sample student data (auto-generated if not present)
 ├── student_data.csv              # Sample student data (auto-generated if not present)
 ├── summary_metrics.json          # Summary of all subject metrics
@@ -184,12 +184,12 @@ Example log message:
 
 1. **Run the script to process student data and generate reports:**
     ```bash
-    python student_data_processor.py
+    python main.py
     ```
 
 2. **Decrypt an email for a student record using the --decrypt option:**
     ```bash
-    python student_data_processor.py --decrypt
+    python main.py --decrypt
     ```
     You will be prompted to enter the student ID and the encryption key.
 
