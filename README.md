@@ -37,7 +37,9 @@ This Python script processes student data, performs encryption/decryption on ema
 
 2. Install required dependencies:
    ```bash
-   pip install -r requirements.txt
+   pip install -r cryptography
+   pip install -r matplotlib
+   pip install -r requests
    ```
 
 3. Run the script:
